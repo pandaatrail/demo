@@ -1,0 +1,123 @@
+version: '3.7'
+services:
+  db:
+    container_name: db
+    env_file: .env
+    environment:
+      MYSQL_DATABASE: demo
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    image: mysql:${MYSQL_TAG}
+    networks:
+    - requirements
+    ports:
+      - "3306:3306"
+    restart: always
+    volumes:
+      - "db:/var/lib/mysql"
+      #- "./mysqld.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf"
+      - "./docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/"
+      - "./mysqld.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf"
+  redis:
+    container_name: redis-server
+    env_file: .env
+    environment:
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_AOF_ENABLED=no
+    expose:
+    - 6379
+    image: bitnami/redis
+    networks:
+    - requirements
+    volumes:
+    - "demo_redis:/bitnami/redis/data"
+    - "redis_dumps:/dumps"
+  redis_slave:
+    env_file: .env
+    environment:
+      - REDIS_REPLICATION_MODE=slave
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_AOF_ENABLED=no
+    expose:
+    - 6379
+    image: bitnami/redis
+    networks:
+    - requirements
+    volumes:
+    - "demo_redis:/bitnami/redis/data"
+    - "redis_dumps:/dumps"
+  # The --scale option refuses to work for now
+  # So not to lose time right now,
+  # bypassing it by setting 2 sentinels up in code
+  redis_sentinel.1:
+    environment:
+     - REDIS_MASTER_PASSWORD=${REDIS_PASSWORD} 
+    image: bitnami/redis-sentinel
+    networks:
+    - requirements
+    ports:
+      - "26379:26379"  
+  redis_sentinel.2:
+    environment:
+     - REDIS_MASTER_PASSWORD=${REDIS_PASSWORD} 
+    image: bitnami/redis-sentinel
+    networks:
+    - requirements
+    ports:
+      - "26380:26379"
+  redis_sentinel.3:
+    environment:
+     - REDIS_MASTER_PASSWORD=${REDIS_PASSWORD} 
+    image: bitnami/redis-sentinel
+    networks:
+    - requirements
+    ports:
+      - "26381:26379"
+  rump:
+    build:
+      context: .
+      dockerfile: rump.dockerfile
+    networks:
+    - requirements
+    volumes:
+    - "redis_dumps:/dumps"
+  traefik:
+    image: traefik:v2.5
+    hostname: traefik
+    networks:
+      endpoint:
+      middle:
+        ipv4_address: 172.24.0.2
+    ports:
+    - "80:80"
+    - "8080:8080"
+    - "443:443"
+    volumes:
+    - "./traefik.yml:/etc/traefik/traefik.yml"
+    - "/var/run/docker.sock:/var/run/docker.sock"
+networks:
+  endpoint:
+    name: endpoint
+  middle:
+    name: middle
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.24.0.0/24"
+          gateway: "172.24.0.1"
+  requirements:
+    name: requirements
+volumes:
+  db:
+    name: db
+    driver: local
+  demo_sharedfiles:
+    name: demo_sharedfiles
+    driver: local
+  demo_redis:
+    name: demo_redis
+    driver: local
+  redis_dumps:
+    name: redis_dumps
+    driver: local
+    
